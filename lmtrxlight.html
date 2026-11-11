@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101114"><title>LMTRX LIGHT</title>
+<style>
+:root{color-scheme:dark;--bg:#101114;--card:#1b1c22;--line:#303139;--muted:#a4a5ad;--lime:#b7f276}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#303c27,transparent 38%),var(--bg);color:#f5f5f1;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:520px;margin:auto;padding:calc(22px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}.tag{color:var(--lime);font-size:11px;letter-spacing:.16em;font-weight:800}h1{font-size:34px;line-height:1.05;letter-spacing:-.04em;margin:9px 0}.sub{color:var(--muted);font-size:14px;margin:0 0 22px}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px;margin:14px 0}.state{display:flex;align-items:center;gap:11px;margin-bottom:14px}.dot{width:11px;height:11px;border-radius:50%;background:#777;box-shadow:0 0 0 5px #7772}.dot.on{background:var(--lime);box-shadow:0 0 0 5px #b7f27622}.hint{font-size:12px;color:var(--muted)}.connect{width:100%;height:54px;border:0;border-radius:15px;background:var(--lime);font:700 16px inherit;color:#161911}.connect.offline{background:#303139;color:#fff}.head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}.head b{font-size:16px}.modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mode{height:78px;border:1px solid var(--line);border-radius:16px;background:#24252c;color:#fff;font:700 14px inherit;text-align:left;padding:13px;cursor:pointer}.mode small{display:block;color:var(--muted);font-size:11px;font-weight:500;margin-top:4px}.mode.active{border-color:var(--lime);background:#2c3724}.range{display:flex;align-items:center;gap:12px}.range input{flex:1;accent-color:var(--lime)}output{min-width:54px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}.foot{text-align:center;color:#777982;font-size:11px;padding-top:8px}button{cursor:pointer}
+</style></head><body><main>
+<div class="tag">BLE · WS2812B · 24 LED</div><h1>LMTRX LIGHT</h1><p class="sub">Sterowanie oświetleniem przez Bluetooth</p>
+<section class="card"><div class="state"><span id="dot" class="dot"></span><div><b id="status">Rozłączono</b><div id="device" class="hint">ESP32 · MRF_LED_BLE</div></div></div><button id="connect" class="connect">Połącz z lampą</button></section>
+<section class="card"><div class="head"><b>Tryb świecenia</b><span class="hint">wybierz efekt</span></div><div class="modes">
+<button class="mode" data-mode="STROBE">⚡ Stroboskop<small>Białe błyski</small></button>
+<button class="mode" data-mode="RAINBOW">🌈 Tęcza<small>Kolory na całym pasku</small></button>
+<button class="mode" data-mode="SPIN">◉ Obrót<small>Punkt krąży wokół</small></button>
+<button class="mode" data-mode="COLORS">🎨 Zmiana kolorów<small>Pełny pasek zmienia barwy</small></button>
+</div></section>
+<section class="card"><div class="head"><b>Jasność</b><output id="brightnessOut">80</output></div><div class="range"><span class="hint">ciemniej</span><input id="brightness" type="range" min="0" max="255" value="80" aria-label="Jasność"><span class="hint">jaśniej</span></div></section>
+<section class="card"><div class="head"><b>Prędkość</b><output id="speedOut">60%</output></div><div class="range"><span class="hint">wolno</span><input id="speed" type="range" min="1" max="100" value="60" aria-label="Prędkość"><span class="hint">szybko</span></div></section>
+<p class="foot">Najpierw połącz telefon z ESP32. Zmiany działają od razu.</p></main>
+<script>
+(() => {
+ const SERVICE='4fafc201-1fb5-459e-8fcc-c5c9c331914b', CHAR='beb5483e-36e1-4688-b7f5-ea07361b26a8';
+ let device=null, characteristic=null, queue=Promise.resolve(), timers={};
+ const $=id=>document.getElementById(id);
+ function show(connected,text){$('status').textContent=text;$('dot').classList.toggle('on',connected);$('connect').textContent=connected?'Rozłącz':'Połącz z lampą';$('connect').classList.toggle('offline',connected)}
+ async function connect(){
+  if(device?.gatt?.connected){device.gatt.disconnect();return}
+  if(!navigator.bluetooth){alert('Otwórz stronę w Bluefy na iPhonie. Panel musi być uruchomiony pod adresem HTTPS.');return}
+  try{show(false,'Wybierz urządzenie…');device=await navigator.bluetooth.requestDevice({filters:[{name:'MRF_LED_BLE'}],optionalServices:[SERVICE]});device.addEventListener('gattserverdisconnected',()=>{characteristic=null;show(false,'Rozłączono')});const server=await device.gatt.connect();const svc=await server.getPrimaryService(SERVICE);characteristic=await svc.getCharacteristic(CHAR);$('device').textContent=device.name||'ESP32';show(true,'Połączono')}
+  catch(e){show(false,e.name==='NotFoundError'?'Nie wybrano urządzenia':'Nie udało się połączyć');if(e.name!=='NotFoundError'&&e.name!=='AbortError')console.error(e)}
+ }
+ function send(cmd){if(!characteristic){show(false,'Najpierw połącz lampę');return}const bytes=new TextEncoder().encode(cmd);queue=queue.then(async()=>{if(!characteristic)return;if(characteristic.properties.write&&characteristic.writeValueWithResponse)await characteristic.writeValueWithResponse(bytes);else if(characteristic.writeValueWithoutResponse)await characteristic.writeValueWithoutResponse(bytes);else await characteristic.writeValue(bytes)}).catch(e=>{console.error(e);show(false,'Błąd wysyłania')})}
+ $('connect').addEventListener('click',connect);
+ document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('[data-mode]').forEach(x=>x.classList.remove('active'));b.classList.add('active');send('MODE:'+b.dataset.mode)}));
+ $('brightness').addEventListener('input',e=>{const v=e.target.value;$('brightnessOut').textContent=v;clearTimeout(timers.b);timers.b=setTimeout(()=>send('BRIGHTNESS:'+v),120)});
+ $('speed').addEventListener('input',e=>{const v=e.target.value;$('speedOut').textContent=v+'%';clearTimeout(timers.s);timers.s=setTimeout(()=>send('SPEED:'+v),120)});
+})();
+</script></body></html>
